@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, Response } from 'express';
 import {
   DriverModel,
   PayModel,
@@ -6,9 +6,22 @@ import {
   OrderModel,
   PackageModel,
   FeedbackModel,
-} from "../models";
-import { PayStatus } from "../models/pay.model";
-import { PayInterface } from "../interface/pay.interface";
+} from '../models';
+import { PayStatus } from '../models/pay.model';
+import { PayInterface } from '../interface/pay.interface';
+import axios from 'axios';
+import Config from '../config';
+import { getPaypalToken } from '../utils/GetPaypalToken';
+import path from 'path';
+import fs from 'fs';
+
+const {
+  urlBack,
+  redirect_base_url,
+  dev,
+  paypal_sandbox_api,
+  paypal_live_api,
+} = Config;
 
 const payDriver = async (req: Request, res: Response) => {
   try {
@@ -21,7 +34,9 @@ const payDriver = async (req: Request, res: Response) => {
     // Verificar si la orden asociada a orderId existe
     const order = await OrderModel.findByPk(orderId);
     if (!order) {
-      return res.status(404).json({ msg: "La orden asociada no existe" });
+      return res
+        .status(404)
+        .json({ msg: 'La orden asociada no existe' });
     }
 
     // Obtener el customerId de la orden
@@ -54,7 +69,7 @@ const payDriver = async (req: Request, res: Response) => {
     order.payId = pay.id;
     await order.save();
 
-    res.status(200).json({ msg: "Pago acreditado", pay });
+    res.status(200).json({ msg: 'Pago acreditado', pay });
   } catch (error) {
     res.status(500).send(error);
   }
@@ -64,10 +79,12 @@ const adminHistoryPay = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const user = await UserModel.findByPk(userId, {
-      include: [{ model: PayModel, include: [DriverModel], as: "pays" }],
+      include: [
+        { model: PayModel, include: [DriverModel], as: 'pays' },
+      ],
     });
     if (!user) {
-      return res.status(404).json({ msg: "Usuario no encontrado" });
+      return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
     // res.status(200).json({ pays: user.pays });
   } catch (error) {
@@ -85,15 +102,15 @@ const driverHistoryPay = async (req: Request, res: Response) => {
           include: [
             {
               model: UserModel,
-              attributes: { exclude: ["password"] },
+              attributes: { exclude: ['password'] },
             },
           ],
-          as: "pays",
+          as: 'pays',
         },
       ],
     });
     if (!driver) {
-      return res.status(404).json({ msg: "Conductor no encontrado" });
+      return res.status(404).json({ msg: 'Conductor no encontrado' });
     }
     res.status(200).json({ pays: driver.pays });
   } catch (error) {
@@ -110,18 +127,23 @@ const payListWithFilter = async (req: Request, res: Response) => {
         {
           model: OrderModel,
           attributes: [
-            "id",
-            "pick_up_city",
-            "pick_up_date",
-            "delivery_date",
-            "customerId",
-            "invoicePath",
-            "packageId",
+            'id',
+            'pick_up_city',
+            'pick_up_date',
+            'delivery_date',
+            'customerId',
+            'invoicePath',
+            'packageId',
           ],
           include: [
             {
               model: PackageModel,
-              attributes: ["product_name", "weight", "type", "offered_price"],
+              attributes: [
+                'product_name',
+                'weight',
+                'type',
+                'offered_price',
+              ],
             },
           ],
         },
@@ -139,23 +161,23 @@ const findPay = async (req: Request, res: Response) => {
   try {
     // Buscar el pago por payId
     const pay = await PayModel.findByPk(payId, {
-      attributes: ["id", "customerId", "driverId", "orderId"],
+      attributes: ['id', 'customerId', 'driverId', 'orderId'],
       include: [
         {
           model: OrderModel,
           attributes: [
-            "pick_up_address",
-            "pick_up_city",
-            "delivery_address",
-            "delivery_city",
-            "pick_up_date",
-            "delivery_date",
-            "packageId",
+            'pick_up_address',
+            'pick_up_city',
+            'delivery_address',
+            'delivery_city',
+            'pick_up_date',
+            'delivery_date',
+            'packageId',
           ],
           include: [
             {
               model: PackageModel,
-              attributes: ["quantity", "product_name"],
+              attributes: ['quantity', 'product_name'],
             },
           ],
         },
@@ -163,13 +185,13 @@ const findPay = async (req: Request, res: Response) => {
     });
 
     if (!pay) {
-      return res.status(404).json({ msg: "Pago no encontrado" });
+      return res.status(404).json({ msg: 'Pago no encontrado' });
     }
 
     // Buscar feedbacks del driver
     const feedbacks = await FeedbackModel.findAll({
       where: { driverId: pay.driverId },
-      attributes: ["score", "comment"],
+      attributes: ['score', 'comment'],
     });
 
     res.status(200).json({ pay, feedbacks });
@@ -178,10 +200,110 @@ const findPay = async (req: Request, res: Response) => {
   }
 };
 
+const createOrder = async (req: Request, res: Response) => {
+  const { price, orderId } = req.query;
+  try {
+    const order = {
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          amount: {
+            currency_code: 'USD',
+            value: `${price}`,
+          },
+          description: `Orden #${orderId}`,
+        },
+      ],
+      application_context: {
+        brand_name: 'Carga Store',
+        landing_page: 'NO_PREFERENCE',
+        user_action: 'PAY_NOW',
+        return_url: `${urlBack}api/pay/capture-order`,
+        cancel_url: `${urlBack}api/pay/cancel-order?orderId=${orderId}`,
+      },
+    };
+
+    const paypal_api = dev ? paypal_sandbox_api : paypal_live_api;
+
+    //Generamos el token de Paypal
+    const token = await getPaypalToken();
+
+    const response = await axios.post(
+      `${paypal_api}/v2/checkout/orders`,
+      order,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.log({ error });
+    return res.status(500).send('Something goes wrong');
+  }
+};
+
+const captureOrder = async (req: Request, res: Response) => {
+  const { token, PayerID } = req.query;
+
+  try {
+    const paypal_api = dev ? paypal_sandbox_api : paypal_live_api;
+
+    const access_token = await getPaypalToken();
+
+    const response = await axios.post(
+      `${paypal_api}/v2/checkout/orders/${token}/capture`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    );
+    console.log('data: ', response.data);
+
+    //Archivo html
+    const filePath = path.join(
+      __dirname,
+      '../../../public/payed.html'
+    );
+
+    // Leer el archivo HTML y enviarlo como respuesta
+    fs.readFile(filePath, 'utf-8', (err, data) => {
+      if (err) {
+        return res.status(500).send('Error al leer el archivo HTML');
+      }
+
+      const htmlContent = data.replace(
+        '{{REDIRECT_URL}}',
+        `${redirect_base_url}/shipments`
+      );
+
+      // Enviar el HTML como respuesta
+      res.send(htmlContent);
+    });
+
+    // return res.redirect('/payed.html');
+  } catch (error) {
+    console.log({ error });
+    return res.status(500).send('Something goes wrong');
+  }
+};
+
+const cancelOrder = (req: Request, res: Response) => {
+  const { orderId } = req.query;
+  res.redirect(`${redirect_base_url}/carga/${orderId}`);
+};
+
 export default {
   payDriver,
   adminHistoryPay,
   driverHistoryPay,
   payListWithFilter,
   findPay,
+  createOrder,
+  captureOrder,
+  cancelOrder,
 };

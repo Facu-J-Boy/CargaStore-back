@@ -29,6 +29,13 @@ const Config = {
 
   //Certificado
   urlCertificado: process.env.URL_CERTIFICADO,
+
+  //Paypal
+  paypal_api_client: process.env.PAYPAL_API_CLIENT,
+  paypal_api_secret: process.env.PAYPAL_API_SECRET,
+  paypal_sandbox_api: process.env.PAYPAL_SANDBOX_API,
+  paypal_live_api: process.env.PAYPAL_LIVE_API,
+  redirect_base_url: process.env.REDIRECT_BASE_URL,
 };
 
 export default Config;

@@ -68,6 +68,10 @@ class Server {
     this.app.use(morgan('dev'));
 
     this.app.use(
+      express.static(path.join(__dirname, '../../../public'))
+    );
+
+    this.app.use(
       '/api/uploads/images',
       express.static(path.join(__dirname, '../../../uploads/images'))
     );

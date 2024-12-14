@@ -10,7 +10,16 @@ const {
   driverHistoryPay,
   payListWithFilter,
   findPay,
+  createOrder,
+  captureOrder,
+  cancelOrder,
 } = PayService;
+
+router.post('/create-order', createOrder);
+
+router.get('/capture-order', captureOrder);
+
+router.get('/cancel-order', cancelOrder);
 
 router.post(
   '/pay_driver',
