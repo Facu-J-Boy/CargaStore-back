@@ -218,7 +218,7 @@ const createOrder = async (req: Request, res: Response) => {
         brand_name: 'Carga Store',
         landing_page: 'NO_PREFERENCE',
         user_action: 'PAY_NOW',
-        return_url: `${urlBack}api/pay/capture-order`,
+        return_url: `${urlBack}api/pay/capture-order?orderId=${orderId}`,
         cancel_url: `${urlBack}api/pay/cancel-order?orderId=${orderId}`,
       },
     };
@@ -246,7 +246,9 @@ const createOrder = async (req: Request, res: Response) => {
 };
 
 const captureOrder = async (req: Request, res: Response) => {
-  const { token, PayerID } = req.query;
+  const { token } = req.query;
+
+  const orderId = req.query.orderId as string | undefined;
 
   try {
     const paypal_api = dev ? paypal_sandbox_api : paypal_live_api;
@@ -263,6 +265,15 @@ const captureOrder = async (req: Request, res: Response) => {
       }
     );
     console.log('data: ', response.data);
+
+    //Buscamos la order
+    const order = await OrderModel.findByPk(orderId);
+
+    //Actualizamos su estado de pago
+    if (order) {
+      order.paid = true;
+      await order?.save();
+    }
 
     //Archivo html
     const filePath = path.join(

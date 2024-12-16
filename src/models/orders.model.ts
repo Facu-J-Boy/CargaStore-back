@@ -129,6 +129,12 @@ class Order extends Model {
   })
   enCamino!: Date | null;
 
+  @Column({
+    type: DataType.BOOLEAN,
+    defaultValue: false,
+  })
+  paid!: boolean;
+
   @ForeignKey(() => Customer)
   @Column({
     type: DataType.UUID,
